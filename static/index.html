@@ -1,0 +1,1746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BuildQuorum</title>
+  <style>
+    /* ── Reset & Base ─────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg:        #0d1117;
+      --surface:   #161b22;
+      --surface2:  #1c2230;
+      --border:    #30363d;
+      --accent:    #58a6ff;
+      --accent-dim:#1f4068;
+      --green:     #3fb950;
+      --green-dim: #0d2e1a;
+      --red:       #f85149;
+      --red-dim:   #2d0f0d;
+      --yellow:    #d29922;
+      --yellow-dim:#2d1f00;
+      --text:      #c9d1d9;
+      --text-muted:#8b949e;
+      --text-dim:  #484f58;
+      --radius:    8px;
+      --radius-lg: 12px;
+      --mono:      'JetBrains Mono', 'Fira Code', 'Cascadia Code', ui-monospace, monospace;
+      --sans:      'Inter', system-ui, -apple-system, sans-serif;
+      --shadow:    0 4px 24px rgba(0,0,0,.45);
+    }
+    html { font-size: 15px; scroll-behavior: smooth; }
+    body {
+      font-family: var(--sans);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    button { font-family: inherit; cursor: pointer; }
+    input, select, textarea { font-family: inherit; }
+    code, pre { font-family: var(--mono); }
+
+    /* ── Scrollbar ─────────────────────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+    /* ── Layout ────────────────────────────────────────────────────────────── */
+    #app { display: flex; flex: 1; overflow: hidden; height: 100vh; }
+
+    /* ── Sidebar ───────────────────────────────────────────────────────────── */
+    #sidebar {
+      width: 220px;
+      flex-shrink: 0;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      padding: 0;
+      overflow-y: auto;
+    }
+    .sidebar-header {
+      padding: 20px 18px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .sidebar-logo {
+      width: 32px;
+      height: 32px;
+      background: linear-gradient(135deg, var(--accent) 0%, #1a7bef 100%);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      font-weight: 800;
+      color: #fff;
+      flex-shrink: 0;
+    }
+    .sidebar-title { font-size: 15px; font-weight: 700; letter-spacing: -.3px; color: #fff; }
+    .sidebar-subtitle { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+
+    .nav-section { padding: 10px 10px 4px; }
+    .nav-section-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .8px;
+      color: var(--text-dim);
+      padding: 0 8px 6px;
+    }
+    .nav-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      width: 100%;
+      padding: 8px 10px;
+      background: none;
+      border: none;
+      border-radius: var(--radius);
+      color: var(--text-muted);
+      font-size: 13.5px;
+      font-weight: 500;
+      transition: background .15s, color .15s;
+      text-align: left;
+    }
+    .nav-btn:hover { background: rgba(255,255,255,.05); color: var(--text); }
+    .nav-btn.active { background: var(--accent-dim); color: var(--accent); }
+    .nav-btn .nav-icon { font-size: 15px; width: 18px; text-align: center; }
+
+    .sidebar-footer {
+      margin-top: auto;
+      padding: 12px 14px;
+      border-top: 1px solid var(--border);
+    }
+    .health-badge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .health-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--text-dim);
+      flex-shrink: 0;
+    }
+    .health-dot.ok { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .health-dot.err { background: var(--red); }
+
+    /* ── Main Content ──────────────────────────────────────────────────────── */
+    #main {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+    }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: rgba(13,17,23,.92);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 28px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .topbar-left { display: flex; align-items: center; gap: 10px; }
+    .page-title { font-size: 17px; font-weight: 700; color: #fff; }
+    .page-desc { font-size: 12.5px; color: var(--text-muted); }
+    .topbar-actions { display: flex; gap: 8px; align-items: center; }
+
+    .content { padding: 24px 28px 40px; flex: 1; max-width: 1100px; }
+
+    /* ── Tabs (sub-nav) ────────────────────────────────────────────────────── */
+    .tab-row {
+      display: flex;
+      gap: 2px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 24px;
+    }
+    .tab-btn {
+      padding: 8px 16px;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-muted);
+      font-size: 13.5px;
+      font-weight: 500;
+      transition: color .15s, border-color .15s;
+      margin-bottom: -1px;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* ── Cards ─────────────────────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+    .card-header {
+      padding: 14px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .card-title { font-size: 14px; font-weight: 600; color: #fff; }
+    .card-body { padding: 18px; }
+
+    /* ── Grid layouts ──────────────────────────────────────────────────────── */
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+
+    /* ── Stat tiles ────────────────────────────────────────────────────────── */
+    .stat-tile {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 18px;
+    }
+    .stat-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .6px; color: var(--text-muted); margin-bottom: 8px; }
+    .stat-value { font-size: 28px; font-weight: 700; color: #fff; line-height: 1; }
+    .stat-sub { font-size: 12px; color: var(--text-muted); margin-top: 5px; }
+
+    /* ── Buttons ───────────────────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 7px 15px;
+      border-radius: var(--radius);
+      border: 1px solid transparent;
+      font-size: 13px;
+      font-weight: 500;
+      transition: background .15s, border-color .15s, opacity .15s;
+      white-space: nowrap;
+    }
+    .btn:disabled { opacity: .45; cursor: not-allowed; }
+    .btn-primary { background: var(--accent); color: #0d1117; border-color: var(--accent); }
+    .btn-primary:hover:not(:disabled) { background: #79b8ff; }
+    .btn-secondary { background: transparent; color: var(--text); border-color: var(--border); }
+    .btn-secondary:hover:not(:disabled) { background: rgba(255,255,255,.06); border-color: #555; }
+    .btn-danger { background: var(--red-dim); color: var(--red); border-color: rgba(248,81,73,.35); }
+    .btn-danger:hover:not(:disabled) { background: rgba(248,81,73,.2); }
+    .btn-success { background: var(--green-dim); color: var(--green); border-color: rgba(63,185,80,.35); }
+    .btn-success:hover:not(:disabled) { background: rgba(63,185,80,.2); }
+    .btn-warn { background: var(--yellow-dim); color: var(--yellow); border-color: rgba(210,153,34,.35); }
+    .btn-warn:hover:not(:disabled) { background: rgba(210,153,34,.2); }
+    .btn-sm { padding: 5px 11px; font-size: 12px; }
+    .btn-xs { padding: 3px 8px; font-size: 11px; }
+    .btn-icon { padding: 6px 10px; }
+    .btn-loading::after {
+      content: '';
+      width: 12px; height: 12px;
+      border: 2px solid currentColor;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+      margin-left: 2px;
+    }
+
+    /* ── Form elements ─────────────────────────────────────────────────────── */
+    .form-row { margin-bottom: 16px; }
+    .form-label { display: block; font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+    .form-input, .form-select, .form-textarea {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-size: 13.5px;
+      padding: 9px 12px;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .form-input:focus, .form-select:focus, .form-textarea:focus { border-color: var(--accent); }
+    .form-select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b949e' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 30px; }
+    .form-textarea { resize: vertical; min-height: 100px; }
+    .form-hint { font-size: 11.5px; color: var(--text-muted); margin-top: 5px; }
+    .form-check { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+    .form-check input[type=checkbox] { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+    .form-check-label { font-size: 13.5px; color: var(--text); }
+
+    /* ── File drop zone ────────────────────────────────────────────────────── */
+    .drop-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius-lg);
+      padding: 32px 20px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      color: var(--text-muted);
+    }
+    .drop-zone:hover, .drop-zone.drag-over { border-color: var(--accent); background: rgba(88,166,255,.05); color: var(--text); }
+    .drop-zone .drop-icon { font-size: 32px; margin-bottom: 10px; }
+    .drop-zone .drop-label { font-size: 14px; font-weight: 500; }
+    .drop-zone .drop-hint { font-size: 12px; margin-top: 5px; }
+    .drop-zone.has-file { border-color: var(--green); background: rgba(63,185,80,.04); }
+    .drop-zone.has-file .drop-label { color: var(--green); }
+
+    /* ── Badges / Tags ─────────────────────────────────────────────────────── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .4px;
+    }
+    .badge-green  { background: var(--green-dim); color: var(--green); }
+    .badge-red    { background: var(--red-dim); color: var(--red); }
+    .badge-yellow { background: var(--yellow-dim); color: var(--yellow); }
+    .badge-blue   { background: var(--accent-dim); color: var(--accent); }
+    .badge-gray   { background: rgba(139,148,158,.15); color: var(--text-muted); }
+
+    /* ── Tables ────────────────────────────────────────────────────────────── */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th {
+      padding: 10px 14px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+    }
+    td {
+      padding: 11px 14px;
+      border-bottom: 1px solid rgba(48,54,61,.5);
+      vertical-align: middle;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,.025); }
+    .td-mono { font-family: var(--mono); font-size: 11.5px; color: var(--text-muted); }
+    .td-hash { font-family: var(--mono); font-size: 11px; color: var(--text-dim); letter-spacing: -.3px; }
+
+    /* ── Alerts / Toasts ───────────────────────────────────────────────────── */
+    #toast-area {
+      position: fixed;
+      top: 18px;
+      right: 18px;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      pointer-events: none;
+    }
+    .toast {
+      pointer-events: all;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 13px 16px;
+      min-width: 280px;
+      max-width: 360px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      box-shadow: var(--shadow);
+      animation: slide-in .2s ease;
+      position: relative;
+    }
+    .toast.toast-ok { border-left: 3px solid var(--green); }
+    .toast.toast-err { border-left: 3px solid var(--red); }
+    .toast.toast-warn { border-left: 3px solid var(--yellow); }
+    .toast.toast-info { border-left: 3px solid var(--accent); }
+    .toast-icon { font-size: 16px; }
+    .toast-body { flex: 1; }
+    .toast-title { font-size: 13px; font-weight: 600; color: #fff; }
+    .toast-msg { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .toast-close { background: none; border: none; color: var(--text-dim); font-size: 16px; padding: 0 2px; cursor: pointer; align-self: flex-start; }
+    .toast-close:hover { color: var(--text); }
+
+    /* ── Inline alerts ─────────────────────────────────────────────────────── */
+    .alert {
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      font-size: 13px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      border: 1px solid;
+    }
+    .alert-ok { background: var(--green-dim); border-color: rgba(63,185,80,.35); color: var(--green); }
+    .alert-err { background: var(--red-dim); border-color: rgba(248,81,73,.35); color: var(--red); }
+    .alert-warn { background: var(--yellow-dim); border-color: rgba(210,153,34,.35); color: var(--yellow); }
+    .alert-info { background: var(--accent-dim); border-color: rgba(88,166,255,.35); color: var(--accent); }
+
+    /* ── Code / Hash display ───────────────────────────────────────────────── */
+    .hash-box {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 8px 12px;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      word-break: break-all;
+      color: var(--text-muted);
+    }
+    .json-block {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.6;
+      overflow-x: auto;
+      white-space: pre;
+      color: var(--text);
+    }
+
+    /* ── Progress / spinner ────────────────────────────────────────────────── */
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes slide-in { from { opacity:0; transform:translateX(20px); } to { opacity:1; transform:translateX(0); } }
+    @keyframes fade-out { to { opacity:0; transform:translateY(-6px); } }
+
+    .job-progress {
+      background: var(--bg);
+      border-radius: var(--radius);
+      height: 4px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    .job-progress-bar {
+      height: 100%;
+      border-radius: 4px;
+      background: var(--accent);
+      transition: width .4s ease;
+    }
+
+    /* ── Validator cards ───────────────────────────────────────────────────── */
+    .validator-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+    .validator-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 16px;
+      position: relative;
+      transition: border-color .2s;
+    }
+    .validator-card.lying { border-color: rgba(248,81,73,.4); background: rgba(248,81,73,.04); }
+    .validator-card.lying .vc-id { color: var(--red); }
+    .vc-id { font-size: 18px; font-weight: 800; color: var(--accent); letter-spacing: -1px; margin-bottom: 10px; }
+    .vc-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 12.5px; }
+    .vc-label { color: var(--text-muted); }
+    .vc-value { font-weight: 600; color: var(--text); }
+    .vc-pubkey {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--text-dim);
+      word-break: break-all;
+      margin-top: 10px;
+      line-height: 1.6;
+    }
+    .lying-toggle { width: 100%; margin-top: 10px; }
+
+    /* ── Block explorer ────────────────────────────────────────────────────── */
+    .block-chain {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .block-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      transition: border-color .2s;
+    }
+    .block-card:hover { border-color: rgba(88,166,255,.3); }
+    .block-header {
+      padding: 13px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+      gap: 10px;
+    }
+    .block-num { font-weight: 700; color: var(--accent); font-size: 13px; }
+    .block-info { flex: 1; }
+    .block-name { font-size: 13.5px; font-weight: 600; color: #fff; }
+    .block-meta { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+    .block-chevron { font-size: 13px; color: var(--text-dim); transition: transform .2s; }
+    .block-card.open .block-chevron { transform: rotate(90deg); }
+    .block-details {
+      display: none;
+      border-top: 1px solid var(--border);
+      padding: 16px;
+    }
+    .block-card.open .block-details { display: block; }
+
+    /* ── Chain status bar ──────────────────────────────────────────────────── */
+    .chain-status-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 16px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      border: 1px solid;
+    }
+    .chain-status-bar.valid { background: var(--green-dim); border-color: rgba(63,185,80,.35); color: var(--green); }
+    .chain-status-bar.invalid { background: var(--red-dim); border-color: rgba(248,81,73,.35); color: var(--red); }
+    .chain-status-bar.unknown { background: var(--accent-dim); border-color: rgba(88,166,255,.35); color: var(--accent); }
+
+    /* ── Job status indicator ──────────────────────────────────────────────── */
+    .job-status-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .job-validator-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .jv-badge {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      padding: 7px 10px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      font-size: 11px;
+      min-width: 60px;
+    }
+    .jv-badge .jv-id { font-weight: 700; font-size: 13px; }
+    .jv-badge.voted-ok { border-color: rgba(63,185,80,.4); background: rgba(63,185,80,.07); color: var(--green); }
+    .jv-badge.voted-bad { border-color: rgba(248,81,73,.4); background: rgba(248,81,73,.07); color: var(--red); }
+    .jv-badge.pending { color: var(--text-muted); }
+
+    /* ── Merkle tree viz ───────────────────────────────────────────────────── */
+    .merkle-step { display: flex; gap: 10px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid rgba(48,54,61,.5); }
+    .merkle-step:last-child { border-bottom: none; }
+    .merkle-step-num { font-weight: 700; color: var(--accent); min-width: 24px; font-size: 12px; }
+    .merkle-step-info { flex: 1; }
+    .merkle-step-dir { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-muted); }
+    .merkle-step-hash { font-family: var(--mono); font-size: 11px; color: var(--text-dim); word-break: break-all; margin-top: 2px; }
+
+    /* ── Empty state ───────────────────────────────────────────────────────── */
+    .empty-state { text-align: center; padding: 48px 24px; color: var(--text-muted); }
+    .empty-state .empty-icon { font-size: 40px; margin-bottom: 14px; }
+    .empty-state .empty-title { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+    .empty-state .empty-desc { font-size: 13px; }
+
+    /* ── Loading state ─────────────────────────────────────────────────────── */
+    .loading-state { display: flex; align-items: center; justify-content: center; gap: 10px; padding: 40px; color: var(--text-muted); font-size: 13px; }
+
+    /* ── Divider ───────────────────────────────────────────────────────────── */
+    .divider { height: 1px; background: var(--border); margin: 20px 0; }
+    .gap-sm { margin-bottom: 10px; }
+    .gap-md { margin-bottom: 18px; }
+    .gap-lg { margin-bottom: 28px; }
+    .flex { display: flex; }
+    .flex-center { display: flex; align-items: center; }
+    .gap-8 { gap: 8px; }
+    .gap-12 { gap: 12px; }
+    .ml-auto { margin-left: auto; }
+    .text-sm { font-size: 12.5px; }
+    .text-muted { color: var(--text-muted); }
+    .text-dim { color: var(--text-dim); }
+    .text-green { color: var(--green); }
+    .text-red { color: var(--red); }
+    .text-accent { color: var(--accent); }
+    .font-mono { font-family: var(--mono); }
+    .font-bold { font-weight: 700; }
+    .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    /* ── Responsive ────────────────────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      #sidebar { width: 200px; }
+      .content { padding: 16px; }
+      .grid-4 { grid-template-columns: repeat(2, 1fr); }
+      .grid-2 { grid-template-columns: 1fr; }
+      .grid-3 { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 540px) {
+      #sidebar { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<div id="toast-area"></div>
+
+<div id="app">
+
+  <!-- ── Sidebar ── -->
+  <aside id="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo">BQ</div>
+      <div>
+        <div class="sidebar-title">BuildQuorum</div>
+        <div class="sidebar-subtitle">Consensus Ledger</div>
+      </div>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-label">Overview</div>
+      <button class="nav-btn active" data-page="dashboard" onclick="navigate('dashboard')">
+        <span class="nav-icon">◈</span> Dashboard
+      </button>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-label">Packages</div>
+      <button class="nav-btn" data-page="submit" onclick="navigate('submit')">
+        <span class="nav-icon">↑</span> Submit
+      </button>
+      <button class="nav-btn" data-page="packages" onclick="navigate('packages')">
+        <span class="nav-icon">≡</span> Browse
+      </button>
+      <button class="nav-btn" data-page="verify" onclick="navigate('verify')">
+        <span class="nav-icon">✓</span> Verify
+      </button>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-label">Ledger</div>
+      <button class="nav-btn" data-page="chain" onclick="navigate('chain')">
+        <span class="nav-icon">⛓</span> Block Explorer
+      </button>
+      <button class="nav-btn" data-page="validators" onclick="navigate('validators')">
+        <span class="nav-icon">◉</span> Validators
+      </button>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-label">Dev Tools</div>
+      <button class="nav-btn" data-page="demo" onclick="navigate('demo')">
+        <span class="nav-icon">⚡</span> Demo Actions
+      </button>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="health-badge">
+        <span class="health-dot" id="health-dot"></span>
+        <span id="health-text">Connecting…</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Main ── -->
+  <main id="main">
+    <div class="topbar">
+      <div class="topbar-left">
+        <div>
+          <div class="page-title" id="page-title">Dashboard</div>
+          <div class="page-desc" id="page-desc">System overview and chain health</div>
+        </div>
+      </div>
+      <div class="topbar-actions" id="topbar-actions"></div>
+    </div>
+
+    <div class="content" id="page-content"></div>
+  </main>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════════
+   BuildQuorum Frontend  ·  Single-Page Application
+   API base: http://127.0.0.1:8000
+══════════════════════════════════════════════════════════════════════════ */
+
+const API = 'http://127.0.0.1:8000';
+
+/* ── Utils ─────────────────────────────────────────────────────────────── */
+function el(id) { return document.getElementById(id); }
+function qs(sel, root = document) { return root.querySelector(sel); }
+function qsa(sel, root = document) { return [...root.querySelectorAll(sel)]; }
+function h(tag, cls, html) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (html !== undefined) e.innerHTML = html;
+  return e;
+}
+
+function trunc(str, n = 24) {
+  if (!str) return '—';
+  return str.length > n ? str.slice(0, n) + '…' : str;
+}
+function shortHash(h, n = 12) {
+  if (!h) return '—';
+  return h.slice(0, n) + '…' + h.slice(-6);
+}
+function reltime(isoStr) {
+  if (!isoStr) return '—';
+  const d = new Date(isoStr);
+  const diff = (Date.now() - d.getTime()) / 1000;
+  if (diff < 5) return 'just now';
+  if (diff < 60) return `${Math.floor(diff)}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  return d.toLocaleDateString();
+}
+function fmtDate(isoStr) {
+  if (!isoStr) return '—';
+  return new Date(isoStr).toLocaleString();
+}
+
+/* ── API ───────────────────────────────────────────────────────────────── */
+async function api(method, path, body, isForm) {
+  const opts = { method, headers: {} };
+  if (body) {
+    if (isForm) opts.body = body;
+    else { opts.body = JSON.stringify(body); opts.headers['Content-Type'] = 'application/json'; }
+  }
+  const r = await fetch(API + path, opts);
+  const ct = r.headers.get('content-type') || '';
+  const data = ct.includes('application/json') ? await r.json() : null;
+  if (!r.ok) throw new Error(data?.detail || `HTTP ${r.status}`);
+  return data;
+}
+const GET   = (p)    => api('GET', p);
+const POST  = (p, b) => api('POST', p, b);
+const POSTJ = (p, b) => api('POST', p, b, false);
+const POSTF = (p, b) => api('POST', p, b, true);
+
+/* ── Toast notifications ───────────────────────────────────────────────── */
+function toast(title, msg = '', kind = 'info') {
+  const icons = { ok:'✓', err:'✕', warn:'!', info:'i' };
+  const area = el('toast-area');
+  const t = h('div', `toast toast-${kind}`);
+  t.innerHTML = `
+    <span class="toast-icon">${icons[kind] || 'i'}</span>
+    <div class="toast-body">
+      <div class="toast-title">${title}</div>
+      ${msg ? `<div class="toast-msg">${msg}</div>` : ''}
+    </div>
+    <button class="toast-close" onclick="this.parentElement.remove()">×</button>
+  `;
+  area.appendChild(t);
+  setTimeout(() => { t.style.animation = 'fade-out .3s forwards'; setTimeout(() => t.remove(), 300); }, 4500);
+}
+
+/* ── Health check ──────────────────────────────────────────────────────── */
+let _health = null;
+async function checkHealth() {
+  try {
+    _health = await GET('/api/health');
+    el('health-dot').className = 'health-dot ok';
+    el('health-text').textContent = `Chain: ${_health.chain_length} blocks`;
+  } catch {
+    el('health-dot').className = 'health-dot err';
+    el('health-text').textContent = 'API offline';
+    _health = null;
+  }
+}
+
+/* ── Navigation ────────────────────────────────────────────────────────── */
+const PAGES = {
+  dashboard: { title: 'Dashboard', desc: 'System overview and chain health', render: renderDashboard },
+  submit:    { title: 'Submit Package', desc: 'Upload a source file and start a build job', render: renderSubmit },
+  packages:  { title: 'Package Registry', desc: 'Browse and download finalized packages', render: renderPackages },
+  verify:    { title: 'Verify Package', desc: 'Check a file against the consensus ledger', render: renderVerify },
+  chain:     { title: 'Block Explorer', desc: 'Inspect blocks, hashes, and Merkle proofs', render: renderChain },
+  validators:{ title: 'Validators', desc: 'Monitor and control validator behaviour', render: renderValidators },
+  demo:      { title: 'Demo Actions', desc: 'Tamper, repair, and reset the chain for demonstration', render: renderDemo },
+};
+let _currentPage = 'dashboard';
+
+function navigate(page) {
+  _currentPage = page;
+  qsa('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.page === page));
+  const p = PAGES[page];
+  el('page-title').textContent = p.title;
+  el('page-desc').textContent = p.desc;
+  el('topbar-actions').innerHTML = '';
+  const content = el('page-content');
+  content.innerHTML = '';
+  p.render(content);
+}
+
+/* ═════════════════════════════════════════════════════════════════════════
+   PAGE: DASHBOARD
+══════════════════════════════════════════════════════════════════════════ */
+async function renderDashboard(root) {
+  root.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr auto;gap:16px;align-items:start" class="gap-md">
+      <!-- Left: compact stat tiles -->
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:14px">
+        ${['Blocks','Packages','Quorum'].map(l => `
+          <div class="stat-tile">
+            <div class="stat-label">${l}</div>
+            <div class="stat-value" id="dash-${l.toLowerCase()}">—</div>
+            <div class="stat-sub" id="dash-${l.toLowerCase()}-sub"></div>
+          </div>`).join('')}
+      </div>
+      <!-- Right: Validators 2×2 -->
+      <div class="card" style="width:340px">
+        <div class="card-header" style="padding:10px 14px">
+          <span class="card-title">Validators</span>
+          <span id="dash-validators-meta" class="text-muted text-sm"></span>
+        </div>
+        <div class="card-body" style="padding:12px">
+          <div id="dash-validators" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <div class="loading-state" style="grid-column:span 2;padding:16px"><div class="spinner"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="gap-md"></div>
+    <div class="grid-2">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Chain Health</span>
+          <button class="btn btn-secondary btn-sm" onclick="dashValidate()">Validate</button>
+        </div>
+        <div class="card-body" id="dash-chain-health">
+          <div class="loading-state"><div class="spinner"></div> Loading…</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Recent Packages</span>
+          <button class="btn btn-secondary btn-sm" onclick="navigate('packages')">View All →</button>
+        </div>
+        <div class="card-body" id="dash-recent-pkgs">
+          <div class="loading-state"><div class="spinner"></div> Loading…</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  try {
+    const [health, pkgs, vals] = await Promise.all([
+      GET('/api/health'),
+      GET('/api/packages'),
+      GET('/api/validators'),
+    ]);
+    _health = health;
+
+    el('dash-blocks').textContent       = health.chain_length;
+    el('dash-blocks-sub').textContent   = 'total blocks';
+    el('dash-packages').textContent     = pkgs.count;
+    el('dash-packages-sub').textContent = 'finalized';
+    el('dash-quorum').textContent       = health.quorum_threshold;
+    el('dash-quorum-sub').textContent   = 'required votes';
+
+    const valCount = health.validators?.length ?? vals.total_validators;
+    const quorum   = health.quorum_threshold;
+    const vmeta = el('dash-validators-meta');
+    if (vmeta) vmeta.textContent = `${valCount} nodes · threshold ${quorum}`;
+
+    // Chain health
+    dashValidate();
+
+    // Recent packages
+    const rp = el('dash-recent-pkgs');
+    const recent = pkgs.packages.slice(-5).reverse();
+    if (!recent.length) {
+      rp.innerHTML = `<div class="empty-state" style="padding:20px"><div class="empty-icon">📦</div><div class="empty-desc">No packages yet</div></div>`;
+    } else {
+      rp.innerHTML = `<div class="table-wrap"><table>
+        <tr><th>Name</th><th>Version</th><th>Block</th><th>Status</th></tr>
+        ${recent.map(p => `<tr>
+          <td class="font-bold">${esc(p.name)}</td>
+          <td class="text-muted">${esc(p.version)}</td>
+          <td><a href="#" class="text-accent" onclick="navigate('chain')">#${p.block_number}</a></td>
+          <td>${pkgStatusBadge(p.status)}</td>
+        </tr>`).join('')}
+      </table></div>`;
+    }
+
+    // Validator mini-status — render directly into the 2×2 grid container
+    const dvGrid = el('dash-validators');
+    dvGrid.innerHTML = '';
+    vals.validators.forEach(v => {
+      const vc = h('div', `validator-card ${v.lying ? 'lying' : ''}`);
+      vc.style.cssText = 'padding:12px';
+      vc.innerHTML = `
+        <div class="vc-id" style="font-size:15px;margin-bottom:6px">${esc(v.validator_id)}</div>
+        <div class="vc-row" style="margin-bottom:4px"><span class="vc-label">Flags</span><span class="vc-value">${v.flag_count}</span></div>
+        <div class="vc-row" style="margin-bottom:0"><span class="vc-label">Mode</span>
+          <span>${v.lying ? '<span class="badge badge-red">Lying</span>' : '<span class="badge badge-green">Honest</span>'}</span>
+        </div>
+      `;
+      dvGrid.appendChild(vc);
+    });
+
+  } catch(e) {
+    toast('Load failed', e.message, 'err');
+  }
+}
+
+async function dashValidate() {
+  const box = el('dash-chain-health');
+  box.innerHTML = `<div class="loading-state"><div class="spinner"></div> Validating…</div>`;
+  try {
+    const r = await GET('/api/chain/validate');
+    box.innerHTML = `
+      <div class="chain-status-bar ${r.valid ? 'valid' : 'invalid'}">
+        <span style="font-size:18px">${r.valid ? '✓' : '✕'}</span>
+        <div>
+          <div style="font-weight:600">${r.valid ? 'Chain Integrity Verified' : 'Chain Integrity Broken'}</div>
+          <div style="font-size:12px;opacity:.8;margin-top:2px">${esc(r.reason)}</div>
+          ${!r.valid ? `<div style="font-size:12px;margin-top:4px">Broken at block <strong>#${r.broken_block}</strong></div>` : ''}
+        </div>
+      </div>
+    `;
+  } catch(e) {
+    box.innerHTML = `<div class="alert alert-err">Failed to validate: ${esc(e.message)}</div>`;
+  }
+}
+
+/* ═════════════════════════════════════════════════════════════════════════
+   PAGE: SUBMIT PACKAGE
+══════════════════════════════════════════════════════════════════════════ */
+let _submitFile = null;
+let _jobPoller  = null;
+
+function renderSubmit(root) {
+  root.innerHTML = `
+    <div class="grid-2" style="align-items:start">
+      <div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Package Details</span></div>
+          <div class="card-body">
+            <div class="form-row">
+              <label class="form-label">Package Name</label>
+              <input class="form-input" id="pkg-name" type="text" placeholder="e.g. libsort" maxlength="100" />
+            </div>
+            <div class="form-row">
+              <label class="form-label">Version</label>
+              <input class="form-input" id="pkg-ver" type="text" placeholder="e.g. 1.0.0" maxlength="40" />
+            </div>
+            <div class="form-row">
+              <label class="form-label">Source File</label>
+              <div class="drop-zone" id="drop-zone" onclick="el('file-input').click()">
+                <div class="drop-icon">📂</div>
+                <div class="drop-label">Drop file or click to browse</div>
+                <div class="drop-hint">Accepts .c, .py, .txt — max 100 KB</div>
+              </div>
+              <input type="file" id="file-input" accept=".c,.py,.txt" style="display:none" onchange="onFileSelect(this)" />
+            </div>
+            <div class="form-row">
+              <label class="form-check">
+                <input type="checkbox" id="compromised-flag" />
+                <span class="form-check-label">Simulate compromised publisher</span>
+              </label>
+              <div class="form-hint">Injects extra bytes to test tamper detection</div>
+            </div>
+            <button class="btn btn-primary" id="submit-btn" onclick="submitPackage()" style="width:100%">
+              Submit Package
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div id="job-panel">
+        <div class="card">
+          <div class="card-header"><span class="card-title">Job Status</span></div>
+          <div class="card-body">
+            <div class="empty-state" style="padding:24px">
+              <div class="empty-icon">⏳</div>
+              <div class="empty-desc">Submit a package to track the build job here</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Drag & drop
+  const dz = el('drop-zone');
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault();
+    dz.classList.remove('drag-over');
+    const f = e.dataTransfer.files[0];
+    if (f) setFile(f);
+  });
+}
+
+function onFileSelect(inp) { if (inp.files[0]) setFile(inp.files[0]); }
+
+function setFile(f) {
+  _submitFile = f;
+  const dz = el('drop-zone');
+  dz.classList.add('has-file');
+  dz.innerHTML = `
+    <div class="drop-icon">✓</div>
+    <div class="drop-label">${esc(f.name)}</div>
+    <div class="drop-hint">${(f.size / 1024).toFixed(1)} KB · Click to change</div>
+  `;
+}
+
+async function submitPackage() {
+  const name = el('pkg-name').value.trim();
+  const ver  = el('pkg-ver').value.trim();
+  if (!name) { toast('Missing field', 'Package name is required', 'err'); return; }
+  if (!ver)  { toast('Missing field', 'Version is required', 'err'); return; }
+  if (!_submitFile) { toast('Missing file', 'Please attach a source file', 'err'); return; }
+
+  const btn = el('submit-btn');
+  btn.classList.add('btn-loading');
+  btn.disabled = true;
+
+  const fd = new FormData();
+  fd.append('file', _submitFile);
+  fd.append('package_name', name);
+  fd.append('version', ver);
+  fd.append('compromised_publisher', el('compromised-flag').checked ? 'true' : 'false');
+
+  try {
+    const result = await POSTF('/api/packages/submit', fd);
+    if (result.duplicate) {
+      toast('Duplicate detected', `Matches block #${result.job.block_number}`, 'warn');
+    } else {
+      toast('Job queued', `Job ID: ${result.job.job_id}`, 'ok');
+    }
+    pollJob(result.job.job_id, result.duplicate);
+  } catch(e) {
+    toast('Submit failed', e.message, 'err');
+  } finally {
+    btn.classList.remove('btn-loading');
+    btn.disabled = false;
+  }
+}
+
+function pollJob(jobId, isDuplicate) {
+  if (_jobPoller) clearInterval(_jobPoller);
+  renderJobPanel(jobId);
+  if (!isDuplicate) {
+    _jobPoller = setInterval(async () => {
+      const job = await GET(`/api/jobs/${jobId}`).catch(() => null);
+      if (!job) return;
+      renderJobPanel(jobId, job);
+      if (['finalized','rejected'].includes(job.status)) {
+        clearInterval(_jobPoller);
+        _jobPoller = null;
+      }
+    }, 800);
+  }
+}
+
+async function renderJobPanel(jobId, job) {
+  const panel = el('job-panel');
+  if (!job) {
+    job = await GET(`/api/jobs/${jobId}`).catch(() => null);
+  }
+  if (!job) { panel.innerHTML = `<div class="alert alert-err">Could not load job ${jobId}</div>`; return; }
+
+  const statusColors = { queued:'gray', building:'blue', voting:'blue', finalized:'green', rejected:'red' };
+  const statusIcons  = { queued:'○', building:'◑', voting:'◑', finalized:'●', rejected:'✕' };
+  const pct          = { queued:10, building:40, voting:70, finalized:100, rejected:100 };
+  const color        = statusColors[job.status] || 'gray';
+
+  const valRows = (job.validators || []).map(v => {
+    let cls = 'pending';
+    if (v.state === 'voted' || v.state === 'attested') cls = v.agrees_with_consensus ? 'voted-ok' : 'voted-bad';
+    return `<div class="jv-badge ${cls}">
+      <span class="jv-id">${esc(v.validator_id)}</span>
+      <span>${v.state === 'voted' || v.state === 'attested'
+        ? (v.agrees_with_consensus ? 'agree' : 'dissent')
+        : v.state || '…'}</span>
+    </div>`;
+  }).join('');
+
+  panel.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Build Job</span>
+        <span class="badge badge-${color}">${statusIcons[job.status] || '?'} ${job.status}</span>
+      </div>
+      <div class="card-body">
+        <div class="form-row">
+          <div class="form-label">Job ID</div>
+          <div class="hash-box">${esc(job.job_id)}</div>
+        </div>
+        <div class="job-progress">
+          <div class="job-progress-bar" style="width:${pct[job.status]||10}%;background:var(--${color === 'green' ? 'green' : color === 'red' ? 'red' : 'accent'})"></div>
+        </div>
+        <div class="gap-sm"></div>
+        ${job.reason ? `<div class="text-sm text-muted gap-sm">${esc(job.reason)}</div>` : ''}
+        ${job.block_number != null ? `<div class="flex flex-center gap-8 gap-sm"><span class="text-muted text-sm">Finalized at</span><span class="badge badge-blue">#${job.block_number}</span></div>` : ''}
+        <div class="form-row" style="margin-top:14px">
+          <div class="form-label">Validator Votes</div>
+          <div class="job-validator-badges">${valRows || '<span class="text-muted text-sm">Waiting…</span>'}</div>
+        </div>
+        ${job.status === 'finalized' ? `
+          <div class="divider"></div>
+          <div class="form-row">
+            <div class="form-label">Publisher integrity</div>
+            ${job.published_matches_consensus
+              ? '<span class="badge badge-green">✓ Clean — hash matches</span>'
+              : '<span class="badge badge-red">⚠ Flagged — publisher tampered artifact</span>'}
+          </div>
+          <div class="form-row">
+            <div class="form-label">Agreeing validators</div>
+            <span class="font-bold text-accent">${job.agreeing_validators} / ${job.quorum_required}</span>
+          </div>
+        ` : ''}
+        <div class="divider"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+          <div><div class="form-label">Source hash</div><div class="td-hash">${shortHash(job.source_hash)}</div></div>
+          <div><div class="form-label">Published hash</div><div class="td-hash">${shortHash(job.published_hash)}</div></div>
+        </div>
+        <div class="gap-sm"></div>
+        <div class="text-dim text-sm">Updated ${reltime(job.updated_at)}</div>
+      </div>
+    </div>
+  `;
+}
+
+/* ═════════════════════════════════════════════════════════════════════════
+   PAGE: PACKAGES BROWSER
+══════════════════════════════════════════════════════════════════════════ */
+async function renderPackages(root) {
+  root.innerHTML = `<div class="loading-state"><div class="spinner"></div> Loading packages…</div>`;
+  try {
+    const data = await GET('/api/packages');
+    const pkgs = [...data.packages].reverse();
+
+    if (!pkgs.length) {
+      root.innerHTML = `<div class="empty-state"><div class="empty-icon">📦</div>
+        <div class="empty-title">No packages yet</div>
+        <div class="empty-desc">Submit a package to populate the registry.</div></div>`;
+      return;
+    }
+
+    root.innerHTML = `
+      <div class="flex-center gap-8 gap-md">
+        <input class="form-input" id="pkg-search" placeholder="Filter by name or version…" oninput="filterPkgs()" style="max-width:300px" />
+        <span class="text-muted text-sm">${pkgs.length} packages</span>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table id="pkg-table">
+            <thead><tr>
+              <th>Block</th><th>Name</th><th>Version</th><th>Status</th>
+              <th>Source Hash</th><th>Consensus Hash</th><th>Submitted</th><th></th>
+            </tr></thead>
+            <tbody id="pkg-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    `;
+    window._allPkgs = pkgs;
+    renderPkgRows(pkgs);
+  } catch(e) {
+    root.innerHTML = `<div class="alert alert-err">Failed to load: ${esc(e.message)}</div>`;
+  }
+}
+
+function pkgStatusBadge(status) {
+  if (status === 'OK') return '<span class="badge badge-green">✓ OK</span>';
+  if (status === 'FLAGGED') return '<span class="badge badge-red">⚠ Flagged</span>';
+  return `<span class="badge badge-gray">${esc(status)}</span>`;
+}
+
+function renderPkgRows(pkgs) {
+  const tbody = el('pkg-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = pkgs.map(p => `<tr>
+    <td><span class="badge badge-blue">#${p.block_number}</span></td>
+    <td class="font-bold">${esc(p.name)}</td>
+    <td class="text-muted">${esc(p.version)}</td>
+    <td>${pkgStatusBadge(p.status)}</td>
+    <td class="td-hash" title="${esc(p.source_hash)}">${shortHash(p.source_hash)}</td>
+    <td class="td-hash" title="${esc(p.consensus_build_hash)}">${shortHash(p.consensus_build_hash)}</td>
+    <td class="text-muted text-sm">${reltime(p.submitted_at)}</td>
+    <td>
+      <div class="flex gap-8">
+        <a class="btn btn-secondary btn-xs" href="${API}/api/packages/${p.block_number}/download" target="_blank" download>↓ Download</a>
+        <button class="btn btn-secondary btn-xs" onclick="navigate('chain');setTimeout(()=>openBlock(${p.block_number}),200)">Block</button>
+      </div>
+    </td>
+  </tr>`).join('');
+}
+
+function filterPkgs() {
+  const q = el('pkg-search').value.toLowerCase();
+  const filtered = (window._allPkgs || []).filter(p =>
+    p.name.toLowerCase().includes(q) || p.version.toLowerCase().includes(q)
+  );
+  renderPkgRows(filtered);
+}
+
+/* ═════════════════════════════════════════════════════════════════════════
+   PAGE: VERIFY PACKAGE
+══════════════════════════════════════════════════════════════════════════ */
+let _verifyFile = null;
+
+function renderVerify(root) {
+  root.innerHTML = `
+    <div class="grid-2" style="align-items:start">
+      <div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Verify File Against Ledger</span></div>
+          <div class="card-body">
+            <p class="text-muted text-sm gap-md">Upload a file to check if its hash matches any consensus artifact stored in the ledger.</p>
+            <div class="form-row">
+              <label class="form-label">File to verify</label>
+              <div class="drop-zone" id="verify-drop" onclick="el('verify-file-input').click()">
+                <div class="drop-icon">🔍</div>
+                <div class="drop-label">Drop or click to select file</div>
+                <div class="drop-hint">Any artifact file</div>
+              </div>
+              <input type="file" id="verify-file-input" style="display:none" onchange="onVerifyFile(this)" />
+            </div>
+            <div class="form-row">
+              <label class="form-label">Block Number <span class="text-dim">(optional)</span></label>
+              <input class="form-input" id="verify-block" type="number" min="1" placeholder="Leave blank to scan all blocks" />
+              <div class="form-hint">Pin verification to a specific block</div>
+            </div>
+            <button class="btn btn-primary" id="verify-btn" onclick="runVerify()" style="width:100%">
+              Verify
+            </button>
+          </div>
+        </div>
+      </div>
+      <div id="verify-result">
+        <div class="card">
+          <div class="card-header"><span class="card-title">Result</span></div>
+          <div class="card-body">
+            <div class="empty-state" style="padding:24px">
+              <div class="empty-icon">⚖</div>
+              <div class="empty-desc">Upload a file to verify</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const dz = el('verify-drop');
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('drag-over');
+    if (e.dataTransfer.files[0]) setVerifyFile(e.dataTransfer.files[0]);
+  });
+}
+
+function onVerifyFile(inp) { if (inp.files[0]) setVerifyFile(inp.files[0]); }
+function setVerifyFile(f) {
+  _verifyFile = f;
+  const dz = el('verify-drop');
+  dz.classList.add('has-file');
+  dz.innerHTML = `<div class="drop-icon">✓</div><div class="drop-label">${esc(f.name)}</div><div class="drop-hint">${(f.size/1024).toFixed(1)} KB</div>`;
+}
+
+async function runVerify() {
+  if (!_verifyFile) { toast('No file', 'Please select a file first', 'err'); return; }
+  const btn = el('verify-btn');
+  btn.classList.add('btn-loading'); btn.disabled = true;
+
+  const fd = new FormData();
+  fd.append('file', _verifyFile);
+  const bn = el('verify-block').value;
+  let url = '/api/packages/verify';
+  if (bn) url += `?block_number=${parseInt(bn)}`;
+
+  try {
+    const r = await POSTF(url, fd);
+    const res = el('verify-result');
+    const isOk = r.status === 'VERIFIED';
+    res.innerHTML = `
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Verification Result</span>
+          <span class="badge badge-${isOk ? 'green' : r.status === 'NOT RECOGNIZED' ? 'yellow' : 'red'}">${esc(r.status)}</span>
+        </div>
+        <div class="card-body">
+          <div class="${isOk ? 'alert alert-ok' : r.status === 'NOT RECOGNIZED' ? 'alert alert-warn' : 'alert alert-err'}" style="margin-bottom:16px">
+            ${isOk ? '✓ File matches consensus artifact' : r.status === 'NOT RECOGNIZED' ? '⚠ File not found in ledger' : '✕ File has been tampered'}
+          </div>
+          <div class="form-row"><div class="form-label">File Hash</div><div class="hash-box">${esc(r.file_hash)}</div></div>
+          ${r.expected_hash ? `<div class="form-row"><div class="form-label">Expected Hash</div><div class="hash-box">${esc(r.expected_hash)}</div></div>` : ''}
+          ${r.block_number != null ? `<div class="flex gap-8"><span class="text-muted text-sm">Block</span><span class="badge badge-blue">#${r.block_number}</span></div>` : ''}
+          ${r.package_name ? `<div class="form-row" style="margin-top:12px"><div class="form-label">Package</div><span class="font-bold">${esc(r.package_name)} <span class="text-muted">${esc(r.version)}</span></span></div>` : ''}
+        </div>
+      </div>
+    `;
+  } catch(e) {
+    toast('Verify failed', e.message, 'err');
+  } finally {
+    btn.classList.remove('btn-loading'); btn.disabled = false;
+  }
+}
+
+/* ═════════════════════════════════════════════════════════════════════════
+   PAGE: BLOCK EXPLORER
+══════════════════════════════════════════════════════════════════════════ */
+async function renderChain(root) {
+  root.innerHTML = `
+    <div class="flex-center gap-8 gap-md">
+      <div id="chain-valid-bar" class="chain-status-bar unknown" style="flex:1">
+        <div class="spinner" style="width:14px;height:14px"></div>
+        <span>Validating chain…</span>
+      </div>
+      <button class="btn btn-secondary" onclick="renderChain(el('page-content'))">↺ Refresh</button>
+    </div>
+    <div class="gap-md"></div>
+    <div class="flex-center gap-8 gap-md">
+      <input class="form-input" id="block-search" type="number" placeholder="Go to block #…" min="0" style="max-width:200px" />
+      <button class="btn btn-secondary" onclick="goToBlock()">Go</button>
+    </div>
+    <div id="chain-blocks" class="block-chain">
+      <div class="loading-state"><div class="spinner"></div> Loading blocks…</div>
+    </div>
+  `;
+
+  try {
+    const [chain, validity] = await Promise.all([
+      GET('/api/chain'),
+      GET('/api/chain/validate'),
+    ]);
+
+    const bar = el('chain-valid-bar');
+    bar.className = `chain-status-bar ${validity.valid ? 'valid' : 'invalid'}`;
+    bar.innerHTML = `
+      <span style="font-size:18px">${validity.valid ? '✓' : '✕'}</span>
+      <div>
+        <div style="font-weight:600">${validity.valid ? 'Chain Valid' : 'Chain Broken'}</div>
+        <div style="font-size:12px;opacity:.8">${esc(validity.reason)}</div>
+      </div>
+    `;
+
+    const container = el('chain-blocks');
+    container.innerHTML = '';
+    const blocks = [...chain.blocks].reverse();
+    blocks.forEach(block => container.appendChild(buildBlockCard(block, chain.blocks, validity)));
+  } catch(e) {
+    root.innerHTML = `<div class="alert alert-err">Failed to load chain: ${esc(e.message)}</div>`;
+  }
+}
+
+function buildBlockCard(block, allBlocks, validity) {
+  const isGenesis = block.index === 0;
+  const pkg = block.package;
+  const isBroken = !validity.valid && validity.broken_block === block.index;
+  const card = h('div', `block-card ${isBroken ? 'broken' : ''}`);
+  if (isBroken) card.style.borderColor = 'var(--red)';
+
+  const pkgName = pkg ? `${esc(pkg.name)} v${esc(pkg.version)}` : (isGenesis ? 'Genesis Block' : '—');
+  const propId = esc(block.proposer_id || '—');
+
+  card.innerHTML = `
+    <div class="block-header" onclick="this.parentElement.classList.toggle('open')">
+      <div class="flex-center gap-8" style="min-width:60px">
+        <span class="block-num">#${block.index}</span>
+        ${isBroken ? '<span class="badge badge-red">Broken</span>' : ''}
+      </div>
+      <div class="block-info">
+        <div class="block-name">${pkgName}</div>
+        <div class="block-meta">Proposer: ${propId} · ${reltime(block.timestamp)}</div>
+      </div>
+      ${pkg ? pkgStatusBadge(pkg.status) : ''}
+      <span class="block-chevron">▶</span>
+    </div>
+    <div class="block-details">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div>
+          <div class="form-label">Block Hash</div>
+          <div class="hash-box" style="font-size:10.5px">${esc(block.block_hash)}</div>
+        </div>
+        <div>
+          <div class="form-label">Previous Hash</div>
+          <div class="hash-box" style="font-size:10.5px">${esc(block.previous_hash)}</div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+        <div>
+          <div class="form-label">Merkle Root</div>
+          <div class="hash-box" style="font-size:10.5px">${esc(block.merkle_root)}</div>
+        </div>
+        <div>
+          <div class="form-label">Timestamp</div>
+          <div class="hash-box" style="font-size:10.5px">${fmtDate(block.timestamp)}</div>
+        </div>
+      </div>
+      ${pkg ? `
+        <div class="divider"></div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:14px">
+          <div><div class="form-label">Package</div><span class="font-bold">${esc(pkg.name)}</span></div>
+          <div><div class="form-label">Version</div><span>${esc(pkg.version)}</span></div>
+          <div><div class="form-label">Build Mode</div><span class="badge badge-gray">${esc(pkg.build_mode||'—')}</span></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+          <div><div class="form-label">Consensus Hash</div><div class="td-hash">${shortHash(pkg.consensus_build_hash)}</div></div>
+          <div><div class="form-label">Publisher Hash</div><div class="td-hash">${shortHash(pkg.published_hash)}</div></div>
+        </div>
+        <div class="flex-center gap-8" style="margin-bottom:14px">
+          <span class="text-sm text-muted">Publisher integrity:</span>
+          ${pkg.status === 'OK'
+            ? '<span class="badge badge-green">✓ Hashes match</span>'
+            : '<span class="badge badge-red">⚠ Hashes diverge</span>'}
+        </div>
+        <div class="flex gap-8">
+          <a class="btn btn-secondary btn-sm" href="${API}/api/packages/${block.index}/download" target="_blank" download>↓ Download artifact</a>
+          <button class="btn btn-secondary btn-sm" onclick="showMerkleModal(${block.index})">🌳 Merkle Proof</button>
+        </div>
+      ` : ''}
+      ${block.attestations && block.attestations.length ? `
+        <div class="divider"></div>
+        <div class="form-label" style="margin-bottom:8px">Attestations (${block.attestations.length})</div>
+        <div class="table-wrap">
+          <table>
+            <tr><th>Validator</th><th>Build Hash</th><th>Signature</th></tr>
+            ${block.attestations.map(a => `<tr>
+              <td class="font-bold">${esc(a.validator_id)}</td>
+              <td class="td-hash">${shortHash(a.build_hash)}</td>
+              <td class="td-hash">${shortHash(a.signature)}</td>
+            </tr>`).join('')}
+          </table>
+        </div>
+      ` : ''}
+    </div>
+  `;
+  card.dataset.blockIndex = block.index;
+  return card;
+}
+
+function goToBlock() {
+  const n = parseInt(el('block-search').value);
+  if (isNaN(n)) return;
+  openBlock(n);
+}
+
+function openBlock(n) {
+  const card = document.querySelector(`[data-block-index="${n}"]`);
+  if (card) { card.classList.add('open'); card.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
+}
+
+/* ── Merkle Proof Modal ─────────────────────────────────────────────────── */
+async function showMerkleModal(blockNumber) {
+  let modal = document.getElementById('merkle-modal');
+  if (modal) modal.remove();
+  modal = h('div', '');
+  modal.id = 'merkle-modal';
+  modal.style.cssText = 'position:fixed;inset:0;z-index:9000;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);padding:20px';
+  modal.innerHTML = `
+    <div class="card" style="width:100%;max-width:620px;max-height:80vh;overflow:auto">
+      <div class="card-header">
+        <span class="card-title">Merkle Proof — Block #${blockNumber}</span>
+        <button class="btn btn-secondary btn-sm" onclick="document.getElementById('merkle-modal').remove()">✕ Close</button>
+      </div>
+      <div class="card-body">
+        <div class="form-row">
+          <label class="form-label">Select Validator</label>
+          <select class="form-select" id="merkle-validator-select"></select>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="loadMerkleProof(${blockNumber})" style="margin-bottom:16px">Load Proof</button>
+        <div id="merkle-proof-content">
+          <div class="empty-state" style="padding:20px"><div class="empty-desc">Select a validator and load proof</div></div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+
+  try {
+    const vals = await GET('/api/validators');
+    const sel = document.getElementById('merkle-validator-select');
+    vals.validators.forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v.validator_id;
+      opt.textContent = v.validator_id;
+      sel.appendChild(opt);
+    });
+  } catch(e) {}
+}
+
+async function loadMerkleProof(blockNumber) {
+  const vid = document.getElementById('merkle-validator-select').value;
+  const box = document.getElementById('merkle-proof-content');
+  box.innerHTML = `<div class="loading-state"><div class="spinner"></div> Computing proof…</div>`;
+  try {
+    const proof = await GET(`/api/blocks/${blockNumber}/proof/${vid}`);
+    box.innerHTML = `
+      <div class="form-row">
+        <div class="form-label">Proof Valid</div>
+        ${proof.valid
+          ? '<span class="badge badge-green" style="font-size:13px">✓ Valid inclusion proof</span>'
+          : '<span class="badge badge-red" style="font-size:13px">✕ Proof invalid</span>'}
+      </div>
+      <div class="form-row">
+        <div class="form-label">Leaf Hash (attestation)</div>
+        <div class="hash-box">${esc(proof.leaf_hash)}</div>
+      </div>
+      <div class="form-row">
+        <div class="form-label">Merkle Root</div>
+        <div class="hash-box">${esc(proof.merkle_root)}</div>
+      </div>
+      <div class="form-row">
+        <div class="form-label">Proof Steps (${proof.steps.length})</div>
+        <div>
+          ${proof.steps.length === 0
+            ? '<span class="text-muted text-sm">Single-leaf tree — no sibling steps needed</span>'
+            : proof.steps.map((s, i) => `
+              <div class="merkle-step">
+                <div class="merkle-step-num">${i + 1}</div>
+                <div class="merkle-step-info">
+                  <div class="merkle-step-dir">Sibling on ${s.position}</div>
+                  <div class="merkle-step-hash">${esc(s.hash)}</div>
+                </div>
+              </div>`).join('')}
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-label">Attestation</div>
+        <div class="json-block">${esc(JSON.stringify(proof.attestation, null, 2))}</div>
+      </div>
+    `;
+  } catch(e) {
+    box.innerHTML = `<div class="alert alert-err">${esc(e.message)}</div>`;
+  }
+}
+
+/* ═════════════════════════════════════════════════════════════════════════
+   PAGE: VALIDATORS
+══════════════════════════════════════════════════════════════════════════ */
+async function renderValidators(root) {
+  root.innerHTML = `<div class="loading-state"><div class="spinner"></div> Loading validators…</div>`;
+  try {
+    const data = await GET('/api/validators');
+    root.innerHTML = `
+      <div class="flex-center gap-8 gap-md">
+        <span class="text-muted text-sm">${data.total_validators} validators · Quorum threshold: <strong>${data.quorum_threshold}</strong></span>
+        <button class="btn btn-secondary btn-sm ml-auto" onclick="renderValidators(el('page-content'))">↺ Refresh</button>
+      </div>
+      <div class="validator-grid" id="val-grid"></div>
+    `;
+    const grid = el('val-grid');
+    data.validators.forEach(v => {
+      grid.appendChild(buildValidatorCard(v));
+    });
+  } catch(e) {
+    root.innerHTML = `<div class="alert alert-err">Failed to load: ${esc(e.message)}</div>`;
+  }
+}
+
+function buildValidatorCard(v) {
+  const card = h('div', `validator-card ${v.lying ? 'lying' : ''}`);
+  card.id = `vcard-${v.validator_id}`;
+  card.innerHTML = `
+    <div class="vc-id">${esc(v.validator_id)}</div>
+    <div class="vc-row">
+      <span class="vc-label">Status</span>
+      <span>${v.lying ? '<span class="badge badge-red">Lying</span>' : '<span class="badge badge-green">Honest</span>'}</span>
+    </div>
+    <div class="vc-row">
+      <span class="vc-label">Flag count</span>
+      <span class="vc-value">${v.flag_count}</span>
+    </div>
+    <div class="vc-pubkey" title="${esc(v.public_key)}">${v.public_key ? shortHash(v.public_key, 20) : '—'}</div>
+    <button class="btn ${v.lying ? 'btn-success' : 'btn-danger'} btn-sm lying-toggle"
+      onclick="toggleLying('${esc(v.validator_id)}', ${!v.lying}, this)">
+      ${v.lying ? '✓ Set Honest' : '✕ Set Lying'}
+    </button>
+  `;
+  return card;
+}
+
+async function toggleLying(validatorId, lying, btn) {
+  btn.disabled = true;
+  btn.classList.add('btn-loading');
+  try {
+    const data = await POSTJ(`/api/validators/${validatorId}/lying`, { lying });
+    toast(`Validator ${validatorId}`, lying ? 'Now lying' : 'Now honest', lying ? 'warn' : 'ok');
+    // Re-render cards
+    data.validators.forEach(v => {
+      const old = el(`vcard-${v.validator_id}`);
+      if (old) old.replaceWith(buildValidatorCard(v));
+    });
+  } catch(e) {
+    toast('Failed', e.message, 'err');
+    btn.disabled = false;
+    btn.classList.remove('btn-loading');
+  }
+}
+
+/* ═════════════════════════════════════════════════════════════════════════
+   PAGE: DEMO ACTIONS
+══════════════════════════════════════════════════════════════════════════ */
+async function renderDemo(root) {
+  root.innerHTML = `
+    <div class="alert alert-warn gap-md">
+      ⚠ These actions mutate the chain state and are intended for demonstration and testing purposes only.
+    </div>
+
+    <div class="grid-3" style="align-items:start">
+
+      <!-- Tamper -->
+      <div class="card">
+        <div class="card-header"><span class="card-title" style="color:var(--red)">⚡ Tamper Block</span></div>
+        <div class="card-body">
+          <p class="text-muted text-sm gap-md">Mutates a block's package hash without updating the block hash, breaking chain integrity.</p>
+          <div class="form-row">
+            <label class="form-label">Block Number</label>
+            <input class="form-input" id="tamper-block" type="number" min="0" placeholder="e.g. 1" />
+          </div>
+          <button class="btn btn-danger" id="tamper-btn" onclick="demoTamper()" style="width:100%">
+            Tamper Block
+          </button>
+          <div id="tamper-result" style="margin-top:14px"></div>
+        </div>
+      </div>
+
+      <!-- Repair -->
+      <div class="card">
+        <div class="card-header"><span class="card-title" style="color:var(--green)">🔧 Repair Chain</span></div>
+        <div class="card-body">
+          <p class="text-muted text-sm gap-md">Restores the chain from the last clean snapshot, undoing any tampering.</p>
+          <button class="btn btn-success" id="repair-btn" onclick="demoRepair()" style="width:100%;margin-top:8px">
+            Repair from Snapshot
+          </button>
+          <div id="repair-result" style="margin-top:14px"></div>
+        </div>
+      </div>
+
+      <!-- Reset -->
+      <div class="card">
+        <div class="card-header"><span class="card-title" style="color:var(--yellow)">↺ Reset Chain</span></div>
+        <div class="card-body">
+          <p class="text-muted text-sm gap-md">Wipes all blocks and jobs back to genesis. All artifacts are deleted. Validators are reset to honest.</p>
+          <button class="btn btn-warn" id="reset-btn" onclick="demoReset()" style="width:100%;margin-top:8px">
+            Reset to Genesis
+          </button>
+          <div id="reset-result" style="margin-top:14px"></div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="gap-md"></div>
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Chain Integrity Check</span>
+        <button class="btn btn-secondary btn-sm" onclick="demoRefreshValidity()">Validate Now</button>
+      </div>
+      <div class="card-body" id="demo-validity">
+        <div class="text-muted text-sm">Click Validate Now to check chain integrity</div>
+      </div>
+    </div>
+  `;
+}
+
+async function demoTamper() {
+  const bn = el('tamper-block').value;
+  if (bn === '' || isNaN(parseInt(bn))) { toast('Missing field', 'Enter a block number', 'err'); return; }
+  const btn = el('tamper-btn');
+  btn.classList.add('btn-loading'); btn.disabled = true;
+  try {
+    const r = await POST(`/api/demo/tamper/${parseInt(bn)}`);
+    toast('Block tampered', `Block #${r.tampered_block} mutated`, 'warn');
+    renderDemoResult('tamper-result', r, 'warn');
+    demoRefreshValidity();
+  } catch(e) {
+    toast('Tamper failed', e.message, 'err');
+    el('tamper-result').innerHTML = `<div class="alert alert-err">${esc(e.message)}</div>`;
+  } finally {
+    btn.classList.remove('btn-loading'); btn.disabled = false;
+  }
+}
+
+async function demoRepair() {
+  const btn = el('repair-btn');
+  btn.classList.add('btn-loading'); btn.disabled = true;
+  try {
+    const r = await POST('/api/demo/repair');
+    toast('Chain repaired', `Restored ${r.length} blocks`, 'ok');
+    renderDemoResult('repair-result', r, 'ok');
+    demoRefreshValidity();
+  } catch(e) {
+    toast('Repair failed', e.message, 'err');
+    el('repair-result').innerHTML = `<div class="alert alert-err">${esc(e.message)}</div>`;
+  } finally {
+    btn.classList.remove('btn-loading'); btn.disabled = false;
+  }
+}
+
+async function demoReset() {
+  if (!confirm('Reset the entire chain to genesis? This is irreversible.')) return;
+  const btn = el('reset-btn');
+  btn.classList.add('btn-loading'); btn.disabled = true;
+  try {
+    const r = await POST('/api/demo/reset');
+    toast('Chain reset', 'Back to genesis block', 'ok');
+    renderDemoResult('reset-result', r, 'ok');
+    checkHealth();
+  } catch(e) {
+    toast('Reset failed', e.message, 'err');
+  } finally {
+    btn.classList.remove('btn-loading'); btn.disabled = false;
+  }
+}
+
+function renderDemoResult(containerId, data, kind) {
+  const box = el(containerId);
+  if (!box) return;
+  const color = { ok: 'green', warn: 'yellow', err: 'red' }[kind] || 'gray';
+  box.innerHTML = `
+    <div class="alert alert-${kind === 'ok' ? 'ok' : kind === 'warn' ? 'warn' : 'err'}" style="margin-bottom:8px">
+      ${kind === 'ok' ? '✓ Success' : kind === 'warn' ? '⚠ Action completed' : '✕ Failed'}
+    </div>
+    <div class="json-block" style="font-size:11px;max-height:180px;overflow:auto">${esc(JSON.stringify(data, null, 2))}</div>
+  `;
+}
+
+async function demoRefreshValidity() {
+  const box = el('demo-validity');
+  if (!box) return;
+  box.innerHTML = `<div class="loading-state"><div class="spinner"></div></div>`;
+  try {
+    const r = await GET('/api/chain/validate');
+    box.innerHTML = `
+      <div class="chain-status-bar ${r.valid ? 'valid' : 'invalid'}">
+        <span style="font-size:18px">${r.valid ? '✓' : '✕'}</span>
+        <div>
+          <div style="font-weight:600">${r.valid ? 'Chain Valid' : 'Chain Broken'}</div>
+          <div style="font-size:12px;opacity:.8;margin-top:2px">${esc(r.reason)}</div>
+          ${!r.valid ? `<div style="font-size:12px;margin-top:4px">Broken at block <strong>#${r.broken_block}</strong></div>` : ''}
+        </div>
+      </div>
+    `;
+    checkHealth();
+  } catch(e) {
+    box.innerHTML = `<div class="alert alert-err">${esc(e.message)}</div>`;
+  }
+}
+
+/* ── Safety ─────────────────────────────────────────────────────────────── */
+function esc(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+/* ── Boot ───────────────────────────────────────────────────────────────── */
+checkHealth();
+setInterval(checkHealth, 10000);
+navigate('dashboard');
+</script>
+</body>
+</html>
